@@ -9,14 +9,18 @@ const generateSignature = (referenceId, amount, currency) => {
   return crypto.createHash("sha256").update(data).digest("hex");
 };
 
-// 1️⃣ INITIATE PAYMENT
+// ✅ INITIATE PAYMENT
 export const initiatePayment = async (req, res) => {
   try {
     const {
-      amount = "1000.00",
-      email = "test@gmail.com",
-      description = "Order Payment",
+      amount,
+      email,
+      description,
     } = req.body;
+
+    if(!amount || !email || !description) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
 
     const referenceId = `ORDER-${Date.now()}`;
     const currency = "INR";
@@ -43,11 +47,11 @@ export const initiatePayment = async (req, res) => {
         billingAddressPostalCode: "751024",
         billingAddressCountry: "IN",
       },
-      additionalDetails: {
-        userData: JSON.stringify({
-          receiptUrl: `${vegaahConfig.callbackUrl}/payment/callback`,
-        }),
-      },
+      // additionalDetails: {
+      //   userData: JSON.stringify({
+      //     receiptUrl: `${vegaahConfig.callbackUrl}/payment/callback`,
+      //   }),
+      // },
     };
 
     console.log("📤 Vegaah Payload:", payload);
@@ -93,7 +97,7 @@ export const handleVegaahCallback = async (req, res) => {
     const { encryptedResponse } = req.body;
     if (!encryptedResponse) return res.status(400).send("No data received");
 
-    // Decrypt response (example, adjust as per Vegaah docs)
+    // Decrypt response (adjust according to Vegaah docs)
     const decipher = crypto.createDecipheriv(
       "aes-256-cbc",
       Buffer.from(vegaahConfig.secretKey, "hex"),
@@ -103,7 +107,21 @@ export const handleVegaahCallback = async (req, res) => {
     decrypted += decipher.final("utf8");
 
     const paymentData = JSON.parse(decrypted);
-    console.log("💰 Vegaah Callback Data:", paymentData);
+    console.log("Vegaah Callback Data:", paymentData);
+
+    const { responseCode, transactionId, orderDetails, amountDetails } =
+      paymentData;
+
+    await Order.findOneAndUpdate(
+      { orderId: orderDetails.orderId },
+      {
+        transactionId,
+        status: responseCode === "001" ? "PAID" : "FAILED",
+        amount: amountDetails.amount,
+        paymentGatewayResponse: paymentData,
+      },
+      { new: true, upsert: true }
+    );
 
     res.status(200).send("SUCCESS");
   } catch (err) {
