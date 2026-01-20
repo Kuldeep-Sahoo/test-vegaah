@@ -28,3 +28,4 @@ app.listen(PORT, async () => {
   await connectDB();
   console.log(`Server running at http://localhost:${PORT}`);
 });
+// new line by k
